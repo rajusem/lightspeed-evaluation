@@ -467,3 +467,60 @@ class TestOutputHandlerInitialization:
 
         assert "test_20240101_120000" in csv_file.name
         assert csv_file.suffix == ".csv"
+
+    def test_metric_metadata_column_populated_in_csv(
+        self,
+        tmp_path: Path,
+        mocker: MockerFixture,
+    ) -> None:
+        """Regression test for OBSINTA-1357 / LEADS-230.
+
+        Verify that the metric_metadata column in CSV output is populated
+        when EvaluationResult has a non-None metric_metadata value. Before
+        the fix, the field was named metrics_metadata (plural) which caused
+        hasattr(result, "metric_metadata") to return False, resulting in
+        empty values in the CSV.
+        """
+        results = [
+            EvaluationResult(
+                conversation_group_id="conv1",
+                turn_id="turn1",
+                metric_identifier="test:metric",
+                score=0.9,
+                result="PASS",
+                threshold=0.7,
+                reason="Good",
+                query="test query",
+                response="test response",
+                metric_metadata='{"key": "value"}',
+            ),
+        ]
+
+        config = mocker.Mock()
+        config.output.enabled_outputs = ["csv"]
+        config.output.csv_columns = [
+            "metric_identifier",
+            "score",
+            "metric_metadata",
+        ]
+        config.visualization.enabled_graphs = []
+        config.model_fields.keys.return_value = []
+
+        handler = OutputHandler(
+            output_dir=str(tmp_path),
+            system_config=config,
+        )
+
+        csv_file = handler._generate_csv_report(results, "regression_test")
+
+        assert csv_file.exists()
+        content = csv_file.read_text()
+        rows = content.strip().split("\n")
+        assert len(rows) == 2  # header + 1 data row
+        header = rows[0]
+        assert "metric_metadata" in header
+        data_row = rows[1]
+        # The metric_metadata value must appear in the CSV row (CSV escapes
+        # inner quotes by doubling them and wraps the field in quotes)
+        assert "key" in data_row and "value" in data_row
+        assert data_row != 'test:metric,0.9,""'  # must not be empty
