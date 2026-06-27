@@ -17,7 +17,7 @@ from lightspeed_evaluation.core.models import (
 )
 from lightspeed_evaluation.core.output.data_persistence import save_evaluation_data
 from lightspeed_evaluation.core.script import ScriptExecutionManager
-from lightspeed_evaluation.core.system import ConfigLoader, DataValidator
+from lightspeed_evaluation.core.system import ConfigLoader
 from lightspeed_evaluation.pipeline.evaluation.amender import APIDataAmender
 from lightspeed_evaluation.pipeline.evaluation.errors import EvaluationErrorHandler
 from lightspeed_evaluation.pipeline.evaluation.evaluator import MetricsEvaluator
@@ -34,7 +34,6 @@ class EvaluationPipeline:
 
     Responsibilities:
     - Initialize and coordinate components
-    - Validate data
     - Orchestrate evaluation flow
     - Collect results
     - Save amended data
@@ -62,10 +61,6 @@ class EvaluationPipeline:
             raise ValueError(
                 "SystemConfig must be loaded before initializing components"
             )
-        self.data_validator = DataValidator(
-            api_enabled=config.api.enabled,
-            fail_on_invalid_data=config.core.fail_on_invalid_data,
-        )
 
         # Metric manager
         metric_manager = MetricManager(config)
@@ -114,10 +109,6 @@ class EvaluationPipeline:
         logger.info("API client initialized for %s endpoint", api_config.endpoint_type)
         return client
 
-    def validate_data(self, evaluation_data: list[EvaluationData]) -> bool:
-        """Validate evaluation data using data validator."""
-        return self.data_validator.validate_evaluation_data(evaluation_data)
-
     def run_evaluation(
         self,
         evaluation_data: list[EvaluationData],
@@ -136,16 +127,11 @@ class EvaluationPipeline:
         logger.info("Starting evaluation")
         results: list[EvaluationResult] = []
 
-        # Step 1: Validate data
-        logger.info("Validating data")
-        if not self.validate_data(evaluation_data):
-            raise ValueError("Data validation failed. Cannot proceed with evaluation.")
-
-        # Step 2: Process each conversation
+        # Step 1: Process each conversation
         logger.info("Processing conversations")
         results = self._process_eval_data(evaluation_data)
 
-        # Step 3: Save amended data if API was used
+        # Step 2: Save amended data if API was used
         config = self.config_loader.system_config
         if config is None:
             raise ValueError("SystemConfig must be loaded")
