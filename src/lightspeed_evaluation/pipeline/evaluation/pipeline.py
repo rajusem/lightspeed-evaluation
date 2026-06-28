@@ -131,21 +131,21 @@ class EvaluationPipeline:
 
         Returns:
             List of evaluation results.
+
+        Note:
+            Data is expected to be pre-validated before calling this method.
+            Use DataValidator.load_evaluation_data() which validates during load,
+            or call pipeline.validate_data() explicitly before run_evaluation().
         """
         self.original_data_path = original_data_path
         logger.info("Starting evaluation")
         results: list[EvaluationResult] = []
 
-        # Step 1: Validate data
-        logger.info("Validating data")
-        if not self.validate_data(evaluation_data):
-            raise ValueError("Data validation failed. Cannot proceed with evaluation.")
-
-        # Step 2: Process each conversation
+        # Step 1: Process each conversation
         logger.info("Processing conversations")
         results = self._process_eval_data(evaluation_data)
 
-        # Step 3: Save amended data if API was used
+        # Step 2: Save amended data if API was used
         config = self.config_loader.system_config
         if config is None:
             raise ValueError("SystemConfig must be loaded")
