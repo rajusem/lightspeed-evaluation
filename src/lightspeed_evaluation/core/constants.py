@@ -85,7 +85,7 @@ SUPPORTED_CSV_COLUMNS = [
     "result",
     "score",
     "threshold",
-    "metric_metadata",
+    "metrics_metadata",
     "reason",
     "query",
     "response",
