@@ -221,37 +221,6 @@ class TestEvaluationPipeline:
         assert len(results) == 1
         assert results[0].result == "PASS"
 
-    def test_run_evaluation_validation_failure(
-        self, mock_config_loader, sample_evaluation_data, mocker
-    ):
-        """Test evaluation fails on validation error."""
-        mock_validator = mocker.patch(
-            "lightspeed_evaluation.pipeline.evaluation.pipeline.DataValidator"
-        )
-        mock_validator.return_value.validate_evaluation_data.return_value = False
-
-        mocker.patch("lightspeed_evaluation.pipeline.evaluation.pipeline.MetricManager")
-        mocker.patch(
-            "lightspeed_evaluation.pipeline.evaluation.pipeline.APIDataAmender"
-        )
-        mocker.patch(
-            "lightspeed_evaluation.pipeline.evaluation.pipeline.EvaluationErrorHandler"
-        )
-        mocker.patch(
-            "lightspeed_evaluation.pipeline.evaluation.pipeline.ScriptExecutionManager"
-        )
-        mocker.patch(
-            "lightspeed_evaluation.pipeline.evaluation.pipeline.MetricsEvaluator"
-        )
-        mocker.patch(
-            "lightspeed_evaluation.pipeline.evaluation.pipeline.ConversationProcessor"
-        )
-
-        pipeline = EvaluationPipeline(mock_config_loader)
-
-        with pytest.raises(ValueError, match="Data validation failed"):
-            pipeline.run_evaluation(sample_evaluation_data)
-
     def test_run_evaluation_saves_amended_data_when_api_enabled(
         self, mock_config_loader, sample_evaluation_data, mocker
     ):
@@ -438,3 +407,51 @@ class TestEvaluationPipeline:
         pipeline = EvaluationPipeline(mock_config_loader, output_dir="/custom/output")
 
         assert pipeline.output_dir == "/custom/output"
+
+    def test_run_evaluation_skips_validation_assumes_pre_validated_data(
+        self, mock_config_loader, sample_evaluation_data, mocker
+    ):
+        """Test that pipeline processes pre-validated data without validation.
+
+        Regression test for LEADS-205: Data validation is performed by the runner
+        before passing data to the pipeline, so the pipeline should not re-validate.
+        This test verifies the pipeline processes data directly without calling
+        validate_data().
+        """
+        # Mock all the pipeline components
+        mock_validator = mocker.patch(
+            "lightspeed_evaluation.pipeline.evaluation.pipeline.DataValidator"
+        )
+        # IMPORTANT: This should NOT be called - data is pre-validated
+        mock_validator.return_value.validate_evaluation_data.return_value = True
+
+        mocker.patch("lightspeed_evaluation.pipeline.evaluation.pipeline.MetricManager")
+        mocker.patch(
+            "lightspeed_evaluation.pipeline.evaluation.pipeline.APIDataAmender"
+        )
+        mocker.patch(
+            "lightspeed_evaluation.pipeline.evaluation.pipeline.EvaluationErrorHandler"
+        )
+        mocker.patch(
+            "lightspeed_evaluation.pipeline.evaluation.pipeline.ScriptExecutionManager"
+        )
+        mocker.patch(
+            "lightspeed_evaluation.pipeline.evaluation.pipeline.MetricsEvaluator"
+        )
+
+        mock_processor = mocker.Mock()
+        mock_processor.process_conversation.return_value = []
+        mocker.patch(
+            "lightspeed_evaluation.pipeline.evaluation.pipeline.ConversationProcessor",
+            return_value=mock_processor
+        )
+
+        pipeline = EvaluationPipeline(mock_config_loader)
+        results = pipeline.run_evaluation(sample_evaluation_data)
+
+        # Verify the processor was called (data was processed)
+        assert mock_processor.process_conversation.call_count == 1
+        # Verify validation was NOT called - this is the regression test
+        mock_validator.return_value.validate_evaluation_data.assert_not_called()
+        # Verify results
+        assert results == []
