@@ -221,14 +221,15 @@ class TestEvaluationPipeline:
         assert len(results) == 1
         assert results[0].result == "PASS"
 
-    def test_run_evaluation_validation_failure(
+    def test_run_evaluation_does_not_double_validate(
         self, mock_config_loader, sample_evaluation_data, mocker
     ):
-        """Test evaluation fails on validation error."""
-        mock_validator = mocker.patch(
+        """Test that validation only happens once (in loader, not pipeline)."""
+        mock_validator_class = mocker.patch(
             "lightspeed_evaluation.pipeline.evaluation.pipeline.DataValidator"
         )
-        mock_validator.return_value.validate_evaluation_data.return_value = False
+        mock_validator_instance = mock_validator_class.return_value
+        mock_validator_instance.validate_evaluation_data.return_value = True
 
         mocker.patch("lightspeed_evaluation.pipeline.evaluation.pipeline.MetricManager")
         mocker.patch(
@@ -243,14 +244,18 @@ class TestEvaluationPipeline:
         mocker.patch(
             "lightspeed_evaluation.pipeline.evaluation.pipeline.MetricsEvaluator"
         )
+        mock_processor = mocker.Mock()
+        mock_processor.process_conversation.return_value = []
         mocker.patch(
-            "lightspeed_evaluation.pipeline.evaluation.pipeline.ConversationProcessor"
+            "lightspeed_evaluation.pipeline.evaluation.pipeline.ConversationProcessor",
+            return_value=mock_processor,
         )
 
         pipeline = EvaluationPipeline(mock_config_loader)
+        pipeline.run_evaluation(sample_evaluation_data)
 
-        with pytest.raises(ValueError, match="Data validation failed"):
-            pipeline.run_evaluation(sample_evaluation_data)
+        # Validation should NOT be called inside run_evaluation
+        mock_validator_instance.validate_evaluation_data.assert_not_called()
 
     def test_run_evaluation_saves_amended_data_when_api_enabled(
         self, mock_config_loader, sample_evaluation_data, mocker
