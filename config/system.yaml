@@ -191,7 +191,7 @@ output:
     - "result"
     - "score"
     - "threshold"
-    - "metric_metadata"
+    - "metrics_metadata"
     - "reason"
     - "execution_time"
     - "query"

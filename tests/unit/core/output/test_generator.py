@@ -268,6 +268,46 @@ class TestOutputHandler:
         assert "response" in content
         assert "Python" in content
 
+    def test_metrics_metadata_column_populated(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        """Regression test: metrics_metadata column must not be empty when data is present.
+
+        Reproduces LEADS-230 / OBSINTA-1358: the column was named 'metric_metadata' in
+        constants.py and system.yaml, but the EvaluationResult field is 'metrics_metadata'
+        (plural). hasattr() returned False for the wrong name, producing an empty CSV column.
+        """
+        results = [
+            EvaluationResult(
+                conversation_group_id="conv1",
+                turn_id="turn1",
+                metric_identifier="ragas:faithfulness",
+                result="PASS",
+                score=0.9,
+                threshold=0.7,
+                reason="Good",
+                metrics_metadata='{"model": "gpt-4", "temperature": 0.7}',
+            )
+        ]
+
+        mocker.patch("builtins.print")
+
+        system_config = mocker.Mock()
+        system_config.output.csv_columns = [
+            "conversation_group_id",
+            "metrics_metadata",
+        ]
+        handler = OutputHandler(output_dir=str(tmp_path), system_config=system_config)
+        csv_file = handler._generate_csv_report(results, "test_metrics_metadata")
+
+        with open(csv_file, encoding="utf-8") as f:
+            reader = csv_module.DictReader(f)
+            rows = list(reader)
+
+        assert len(rows) == 1
+        # This assertion would have FAILED before the fix (empty string instead of JSON)
+        assert rows[0]["metrics_metadata"] == '{"model": "gpt-4", "temperature": 0.7}'
+
     def test_generate_reports_without_config(
         self,
         tmp_path: Path,
