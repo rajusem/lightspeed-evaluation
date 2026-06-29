@@ -178,11 +178,6 @@ class TestEvaluationPipeline:
     ):
         """Test successful evaluation run."""
         # Mock all components
-        mock_validator = mocker.patch(
-            "lightspeed_evaluation.pipeline.evaluation.pipeline.DataValidator"
-        )
-        mock_validator.return_value.validate_evaluation_data.return_value = True
-
         mocker.patch("lightspeed_evaluation.pipeline.evaluation.pipeline.MetricManager")
         mocker.patch(
             "lightspeed_evaluation.pipeline.evaluation.pipeline.APIDataAmender"
@@ -221,14 +216,14 @@ class TestEvaluationPipeline:
         assert len(results) == 1
         assert results[0].result == "PASS"
 
-    def test_run_evaluation_validation_failure(
+    def test_run_evaluation_does_not_call_validate_data(
         self, mock_config_loader, sample_evaluation_data, mocker
     ):
-        """Test evaluation fails on validation error."""
+        """Test that run_evaluation does not call validate_data (removed redundant validation)."""
         mock_validator = mocker.patch(
             "lightspeed_evaluation.pipeline.evaluation.pipeline.DataValidator"
         )
-        mock_validator.return_value.validate_evaluation_data.return_value = False
+        mock_validator.return_value.validate_evaluation_data.return_value = True
 
         mocker.patch("lightspeed_evaluation.pipeline.evaluation.pipeline.MetricManager")
         mocker.patch(
@@ -243,25 +238,37 @@ class TestEvaluationPipeline:
         mocker.patch(
             "lightspeed_evaluation.pipeline.evaluation.pipeline.MetricsEvaluator"
         )
+
+        mock_processor = mocker.Mock()
+        mock_result = EvaluationResult(
+            conversation_group_id="conv1",
+            turn_id="turn1",
+            metric_identifier="ragas:faithfulness",
+            score=0.85,
+            result="PASS",
+            threshold=0.7,
+            reason="Good",
+        )
+        mock_processor.process_conversation.return_value = [mock_result]
+
         mocker.patch(
-            "lightspeed_evaluation.pipeline.evaluation.pipeline.ConversationProcessor"
+            "lightspeed_evaluation.pipeline.evaluation.pipeline.ConversationProcessor",
+            return_value=mock_processor,
         )
 
         pipeline = EvaluationPipeline(mock_config_loader)
+        pipeline.run_evaluation(sample_evaluation_data)
 
-        with pytest.raises(ValueError, match="Data validation failed"):
-            pipeline.run_evaluation(sample_evaluation_data)
+        # Verify validate_evaluation_data was NOT called from run_evaluation
+        # (it was only called during __init__ for component setup, but not from run_evaluation)
+        call_count = mock_validator.return_value.validate_evaluation_data.call_count
+        assert call_count == 0, "validate_evaluation_data should not be called in run_evaluation"
 
     def test_run_evaluation_saves_amended_data_when_api_enabled(
         self, mock_config_loader, sample_evaluation_data, mocker
     ):
         """Test amended data is saved when API is enabled."""
         mock_config_loader.system_config.api.enabled = True
-
-        mock_validator = mocker.patch(
-            "lightspeed_evaluation.pipeline.evaluation.pipeline.DataValidator"
-        )
-        mock_validator.return_value.validate_evaluation_data.return_value = True
 
         mocker.patch("lightspeed_evaluation.pipeline.evaluation.pipeline.MetricManager")
         mocker.patch("lightspeed_evaluation.pipeline.evaluation.pipeline.APIClient")
@@ -301,10 +308,7 @@ class TestEvaluationPipeline:
         """Test save amended data handles exceptions gracefully."""
         mock_config_loader.system_config.api.enabled = True
 
-        mock_validator = mocker.patch(
-            "lightspeed_evaluation.pipeline.evaluation.pipeline.DataValidator"
-        )
-        mock_validator.return_value.validate_evaluation_data.return_value = True
+        mock_config_loader.system_config.core.max_threads = 2
 
         mocker.patch("lightspeed_evaluation.pipeline.evaluation.pipeline.MetricManager")
         mocker.patch("lightspeed_evaluation.pipeline.evaluation.pipeline.APIClient")
